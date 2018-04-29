@@ -5,8 +5,36 @@ import socket
 import time
 
 # 定義掃描IP來源檔案，逐行讀取，每一行格式為 XX學校,192.168.x.x/24
-iplist = 'iplist2.txt'
+iplist = 'tplist.txt'
 timeout = 10
+
+# 掃描網域中的NS Server並進行測試
+def scan_domain_ns_test(school_domain, reportfile):
+    res = resolver.Resolver()
+    res.nameservers = ['1.1.1.1']
+    res.lifetime = timeout
+    res.timeout = timeout
+    ns_server = res.query(school_domain, 'ns')
+    for i in range(len(ns_server)):
+        testns = str(ns_server[i])[:-1]
+        #print("測試" + testns)
+        res2 = resolver.Resolver()
+        res2.nameservers = [testns]
+        res2.lifetime = timeout
+        res2.timeout = timeout    
+        try:
+             answers = res2.query('google.com', tcp=True)[0]
+             scan_ip_report = str(school_name + '的官方DNS Server:' + testns + '-[Accept Query google.com:' + str(answers) +  ']--對外開放遞迴查詢!!\n')
+             print(scan_ip_report)
+             fp = open(report_file, "a")
+             fp.write(scan_ip_report)
+             fp.close()
+        except:
+             scan_ip_report = str(school_name + '的官方DNS Server:' + testns + '-[Refused Query google.com]--未開放\n')
+             print(scan_ip_report)
+             fp = open(report_file, "a")
+             fp.write(scan_ip_report)
+             fp.close()
 
 # 掃描TCP 53 port，若有開放則進行dns lookup測試google.com
 def openresolver_test(school_name, test_ip, report_file, ns_num):
@@ -23,13 +51,13 @@ def openresolver_test(school_name, test_ip, report_file, ns_num):
                res.timeout = timeout
                try:
                    answers = res.query('google.com', tcp=True)[0]
-                   scan_ip_report = str(school_name + '的DNS Server:' + str(test_ip) + '-[Accept Query google.com:' + str(answers) +  ']--對外開放遞迴查詢!!\n')
+                   scan_ip_report = str(school_name + '的TCP DNS Server:' + str(test_ip) + '-[Accept Query google.com:' + str(answers) +  ']--對外開放遞迴查詢!!\n')
                    print(scan_ip_report)
                    fp = open(report_file, "a")
                    fp.write(scan_ip_report)
                    fp.close()
                except:
-                   scan_ip_report = str(school_name + '的DNS Server:' + str(test_ip) + '-[Refused Query google.com]--未開放\n')
+                   scan_ip_report = str(school_name + '的TCP DNS Server:' + str(test_ip) + '-[Refused Query google.com]--未開放\n')
                    print(scan_ip_report)
                    fp = open(report_file, "a")
                    fp.write(scan_ip_report)
@@ -71,22 +99,28 @@ fp.write("\n\nOpen Resolver 掃描起始時間" + scan_time + "\n\n")
 fp.close()
 
 # 讀取iplist開始掃描
-for line in open(iplist):
+for line in open(iplist, encoding='UTF-8'):
      school_name = str(line.split(',')[0])
+     school_cidr = str(line.split(',')[1])
+     school_domain = str(line.split(',')[2]).rstrip()
      school_time = str(time.strftime("%Y%m%d-%H%M%S", time.localtime()))
-     scan_school = str('--掃描時間:' + school_time + '--' + line.split(',')[0] + '：' + line.split(',')[1])
+     scan_school = str('--掃描時間:' + school_time + '--' + school_name + '：' +  school_domain +  '：'  + school_cidr)
      print(scan_school);
      fp = open(report_file, "a")
      fp.write(scan_school)
      fp.close()
      schoolcidr = str(line.split(',')[1])
      ns_num = 0
+
+     #掃描該網域內的中的NS Server並進行測試
+     scan_domain_ns_test(school_domain, report_file)
+
      # 進行tcp port 53掃描，socket開啟則進行lookup google.com測試
      for ip in IPSet([schoolcidr]):
         ns_num_add = openresolver_test(school_name,ip,report_file,ns_num)
         ns_num = ns_num + ns_num_add
 
-     print("檢測到",str(ns_num),"台TCP DNS Server")
+     print(school_name + "掃描53 port檢測到",str(ns_num),"台TCP DNS Server\n\n")
 
      #如果網段中檢測不到tcp port 53開放，改成測UDP 53 port，因udp 53 hijacking導致測試時間過長暫不使用
      #if ns_num == 0 :
